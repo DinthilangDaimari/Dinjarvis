@@ -66,7 +66,7 @@ A futuristic, voice-powered AI personal assistant application inspired by Tony S
 ### Setup
 1. Clone the repository:
    ```bash
-   git clone <your-github-repo-url>
+   git clone https://dinthilangdaimari.github.io/Dinjarvis/
    cd jarvis-android
    ```
 2. Open the project in **Android Studio**.
