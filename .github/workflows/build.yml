@@ -24,17 +24,20 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Fix Index.html filename
+      - name: Prepare Web Assets Directory
         run: |
+          mkdir -p www
           if [ -f "Index.html" ]; then
-            mv Index.html index.html
+            cp Index.html www/index.html
+          elif [ -f "index.html" ]; then
+            cp index.html www/index.html
           fi
 
       - name: Build Android Package via Capacitor
         run: |
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "J.A.R.V.I.S." "com.stark.jarvis" --web-dir .
+          npx cap init "J.A.R.V.I.S." "com.stark.jarvis" --web-dir www
           npx cap add android
           npx cap sync android
 
