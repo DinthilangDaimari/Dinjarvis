@@ -1,0 +1,38 @@
+{
+  "name": "J.A.R.V.I.S. AI Assistant",
+  "short_name": "J.A.R.V.I.S.",
+  "description": "Voice-controlled AI Assistant with Calendar, Calls, and Smart Home Automation - Installable Direct Web App",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#060A12",
+  "theme_color": "#00E5FF",
+  "categories": ["utilities", "productivity"],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Voice Directive",
+      "url": "./#voice",
+      "description": "Activate J.A.R.V.I.S. voice interaction"
+    },
+    {
+      "name": "Upcoming Events",
+      "url": "./#calendar",
+      "description": "View upcoming calendar schedule"
+    }
+  ]
+}
