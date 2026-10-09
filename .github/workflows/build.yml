@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Web App to APK
 
 on:
   push:
@@ -10,27 +10,42 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle Wrapper if Missing
+      - name: Fix Index.html filename
         run: |
-          if [ ! -f "./gradlew" ]; then
-            gradle wrapper
+          if [ -f "Index.html" ]; then
+            mv Index.html index.html
           fi
+
+      - name: Build Android Package via Capacitor
+        run: |
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npx cap init "J.A.R.V.I.S." "com.stark.jarvis" --web-dir .
+          npx cap add android
+          npx cap sync android
+
+      - name: Compile Debug APK
+        run: |
+          cd android
           chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon
-
-      - name: Upload APK Artifact
+      - name: Upload Finished APK
         uses: actions/upload-artifact@v4
         with:
-          name: jarvis-app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: jarvis-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
