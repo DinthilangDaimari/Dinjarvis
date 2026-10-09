@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>J.A.R.V.I.S. AI - Stark Industries</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#00E5FF">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="J.A.R.V.I.S.">
+  <link rel="stylesheet" href="./style.css">
+  <!-- Inline SVG favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23060A12' stroke='%2300E5FF' stroke-width='6'/%3E%3Ccircle cx='50' cy='50' r='25' fill='none' stroke='%23FFB300' stroke-width='4'/%3E%3Ccircle cx='50' cy='50' r='10' fill='%2300E5FF'/%3E%3C/svg%3E">
+</head>
+<body>
+  <div class="hud-container">
+
+    <!-- Top Header -->
+    <header class="hud-header">
+      <div class="logo-group">
+        <div class="pulse-dot"></div>
+        <div class="logo-text">
+          <h1>J.A.R.V.I.S.</h1>
+          <span>STARK OS // PWA WEB PORTAL</span>
+        </div>
+      </div>
+      <span class="install-badge" id="install-badge">DIRECT INSTALL PWA</span>
+    </header>
+
+    <!-- 1. Direct Web App Installation Card -->
+    <section class="install-card" id="install-section">
+      <div class="install-header">
+        <span style="font-size: 13px; font-weight: 700; color: var(--cyan); letter-spacing: 1px;">
+          DIRECT WEB APP INSTALLATION
+        </span>
+        <span style="font-size: 11px; color: var(--neon-teal); font-weight: bold;">
+          STANDALONE READY
+        </span>
+      </div>
+      <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">
+        Install J.A.R.V.I.S. directly from this web app onto your phone or computer home screen. Runs in fullscreen standalone mode with offline support and zero app store required!
+      </p>
+
+      <!-- Main Direct Install Button -->
+      <button class="install-btn" id="btn-pwa-install">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+        </svg>
+        INSTALL J.A.R.V.I.S. DIRECT TO HOME SCREEN
+      </button>
+
+      <div style="display: flex; gap: 8px;">
+        <a href="/download-apk" class="secondary-btn" style="flex: 1;" download>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/>
+          </svg>
+          DIRECT APK DOWNLOAD
+        </a>
+        <button class="secondary-btn" onclick="navigator.clipboard?.writeText(window.location.href); alert('Web App URL copied to clipboard! Open in Chrome or Safari to install directly.');" style="flex: 1;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+          </svg>
+          SHARE / COPY LINK
+        </button>
+      </div>
+    </section>
+
+    <!-- 2. Interactive Arc Reactor Voice Core -->
+    <section class="arc-reactor-card">
+      <div class="reactor-circle" id="reactor-orb" title="Tap to speak directive">
+        <div class="reactor-inner">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="speech-status">
+        <h2 id="speech-title">ARC REACTOR READY</h2>
+        <p id="speech-sub">Tap the core to speak directives</p>
+      </div>
+    </section>
+
+    <!-- 3. Real-time Response HUD -->
+    <section class="response-card" id="response-box">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="tag" id="action-tag">TELEMETRY // LIVE</span>
+        <span style="font-size: 10px; color: var(--cyan);">STARK INTELLIGENCE</span>
+      </div>
+      <p class="content" id="response-text">
+        "All systems nominal, Sir. J.A.R.V.I.S. is ready to execute directives via web app or over any background application."
+      </p>
+    </section>
+
+    <!-- 4. Quick Telemetry & Status Grid -->
+    <section class="info-grid">
+      <div class="info-card">
+        <span class="card-title">UPCOMING CALENDAR</span>
+        <span class="card-val">3 Events Today</span>
+      </div>
+      <div class="info-card">
+        <span class="card-title">OVERLAY ENGINE</span>
+        <span class="card-val" style="color: var(--neon-teal);">ACTIVE OVER APPS</span>
+      </div>
+      <div class="info-card">
+        <span class="card-title">SMART LIGHTING</span>
+        <span class="card-val">75% Ambient</span>
+      </div>
+      <div class="info-card">
+        <span class="card-title">AI DIRECTIVE MODEL</span>
+        <span class="card-val" style="color: var(--amber);">GEMINI FLASH</span>
+      </div>
+    </section>
+
+    <!-- 5. How to Install Direct From Web App Guide -->
+    <section class="guide-card">
+      <div style="font-size: 13px; font-weight: 700; color: var(--cyan); letter-spacing: 1px;">
+        HOW TO INSTALL DIRECT FROM WEB APP:
+      </div>
+
+      <div class="guide-step">
+        <div class="step-num">1</div>
+        <div class="step-text">
+          <h4>Google Chrome (Android / PC / Mac)</h4>
+          <p>Tap the 3 dots menu (⋮) in the top-right corner &rarr; Select "Install app" or "Add to Home screen" &rarr; Tap "Install".</p>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="step-num">2</div>
+        <div class="step-text">
+          <h4>Apple Safari (iPhone / iPad)</h4>
+          <p>Tap the Share button (square with arrow) at the bottom &rarr; Scroll down and tap "Add to Home Screen" &rarr; Tap "Add".</p>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="step-num">3</div>
+        <div class="step-text">
+          <h4>Samsung Internet Browser</h4>
+          <p>Tap the Install icon in the address bar or tap the menu (&equiv;) &rarr; Select "Add page to" &rarr; "Home screen".</p>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="step-num">4</div>
+        <div class="step-text">
+          <h4>Direct APK Package Installation</h4>
+          <p>Tap "Direct APK Download" above to download and install the Android app package directly onto your phone.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
