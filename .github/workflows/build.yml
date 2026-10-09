@@ -27,19 +27,19 @@ jobs:
       - name: Prepare Web Assets Directory
         run: |
           mkdir -p www
-          if [ -f "index.html" ]; then
-            cp index.html www/
-          elif [ -f "Index.html" ]; then
-            cp Index.html www/index.html
+          # Search for any HTML file in the repository and copy it as index.html
+          HTML_FILE=$(find . -maxdepth 3 -name "*.html" ! -path "./www/*" ! -path "./.github/*" | head -n 1)
+          if [ -n "$HTML_FILE" ]; then
+            cp "$HTML_FILE" www/index.html
           else
-            echo "<html><body><h1>J.A.R.V.I.S. AI Assistant</h1></body></html>" > www/index.html
+            echo "<html><body><h1>JARVIS UI Not Found</h1></body></html>" > www/index.html
           fi
 
       - name: Build Android Package via Capacitor
         run: |
           npm init -y
           npm install @capacitor/core@5 @capacitor/cli@5 @capacitor/android@5
-          npx cap init "JARVIS" "com.stark.jarvis" --web-dir www
+          npx cap init "J.A.R.V.I.S." "com.stark.jarvis" --web-dir www
           npx cap add android
           npx cap sync android
 
