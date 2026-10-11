@@ -1,11 +1,7 @@
-# 1. Initialize git and stage all project files
-git init
+# 1. Stage all files including the 52MB native APK
 git add .
-git commit -m "feat: J.A.R.V.I.S. AI Assistant with Arc Reactor Voice Core, Overlay, and APK installer"
+git add -f JARVIS-AI.apk
+git commit -m "feat: Add native Android APK and automated GitHub Actions release"
 
-# 2. Link your GitHub repository
-git branch -M main
-git remote add origin https://github.com/<YOUR-USERNAME>/<YOUR-REPO-NAME>.git
-
-# 3. Push to GitHub
+# 2. Push to your repository
 git push -u origin main
