@@ -1,3 +1,15 @@
 <resources>
     <string name="app_name">J.A.R.V.I.S.</string>
+    <string name="widget_name">J.A.R.V.I.S. Voice Hub</string>
+    <string name="widget_description">Futuristic Arc Reactor voice assistant widget for home screen</string>
+    <string name="shortcut_schedule_meeting_short">Schedule Meeting</string>
+    <string name="shortcut_schedule_meeting_long">Schedule a Meeting with J.A.R.V.I.S.</string>
+    <string name="shortcut_toggle_lights_short">Toggle Smart Lights</string>
+    <string name="shortcut_toggle_lights_long">Toggle Smart Home Lights on or off</string>
+    <string name="shortcut_voice_command_short">Voice Directives</string>
+    <string name="shortcut_voice_command_long">Instant Voice Command Relay</string>
+    <string name="shortcut_disabled">Shortcut temporarily disabled</string>
+    <string name="tile_jarvis_name">J.A.R.V.I.S. Voice</string>
+    <string name="floating_overlay_title">J.A.R.V.I.S. Active Over Apps</string>
+    <string name="floating_overlay_desc">Arc Reactor overlay is active. Tap to speak from any app.</string>
 </resources>

@@ -1,11 +1,14 @@
 package com.example.ui.viewmodel
 
+import android.Manifest
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.AlarmClock
 import android.provider.MediaStore
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ai.JarvisAiEngine
@@ -17,9 +20,12 @@ import com.example.data.model.CalendarEvent
 import com.example.data.model.CallLogEntry
 import com.example.data.model.ContactPerson
 import com.example.data.model.EmailMessage
+import com.example.data.model.ScheduleHistoryContext
 import com.example.data.model.SmartDevice
 import com.example.data.model.SmartRoutine
+import com.example.data.model.UserScheduleReminder
 import com.example.data.repository.JarvisRepository
+import com.example.smarthome.service.SmartHomeManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,13 +56,16 @@ sealed class JarvisUiEvent {
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
 
     private val database = JarvisDatabase.getDatabase(application, viewModelScope)
+    val smartHomeManager = SmartHomeManager(application, database.homeDao())
     val repository = JarvisRepository(
         calendarDao = database.calendarDao(),
+        scheduleHistoryDao = database.scheduleHistoryDao(),
         emailDao = database.emailDao(),
         contactDao = database.contactDao(),
         callLogDao = database.callLogDao(),
         homeDao = database.homeDao(),
-        assistantLogDao = database.assistantLogDao()
+        assistantLogDao = database.assistantLogDao(),
+        smartHomeManager = smartHomeManager
     )
 
     private val aiEngine = JarvisAiEngine(repository)
@@ -80,8 +89,29 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private val _lastInternalThought = MutableStateFlow("Core telemetry active. Awaiting voice input.")
     val lastInternalThought: StateFlow<String> = _lastInternalThought.asStateFlow()
 
+    private val _lastRecognizedVoiceInput = MutableStateFlow("")
+    val lastRecognizedVoiceInput: StateFlow<String> = _lastRecognizedVoiceInput.asStateFlow()
+
+    private val _isLastGeminiPowered = MutableStateFlow(false)
+    val isLastGeminiPowered: StateFlow<Boolean> = _isLastGeminiPowered.asStateFlow()
+
+    private val _lastActionType = MutableStateFlow("SPEAK_ONLY")
+    val lastActionType: StateFlow<String> = _lastActionType.asStateFlow()
+
     private val _reactorOutput = MutableStateFlow(99.4f)
     val reactorOutput: StateFlow<Float> = _reactorOutput.asStateFlow()
+
+    // App Shortcut & Direct trigger dialog states
+    private val _showScheduleMeetingDialog = MutableStateFlow(false)
+    val showScheduleMeetingDialog: StateFlow<Boolean> = _showScheduleMeetingDialog.asStateFlow()
+
+    fun openScheduleMeetingDialog() {
+        _showScheduleMeetingDialog.value = true
+    }
+
+    fun clearScheduleMeetingDialog() {
+        _showScheduleMeetingDialog.value = false
+    }
 
     // Events Flow
     private val _uiEvents = MutableSharedFlow<JarvisUiEvent>()
@@ -89,6 +119,18 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     // Data streams from repository
     val events: StateFlow<List<CalendarEvent>> = repository.events.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    val reminders: StateFlow<List<UserScheduleReminder>> = repository.reminders.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    val scheduleHistory: StateFlow<List<ScheduleHistoryContext>> = repository.scheduleHistory.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -137,13 +179,16 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun executeCommand(command: String) {
         if (command.isBlank()) return
         viewModelScope.launch {
+            _lastRecognizedVoiceInput.value = command
             _isProcessing.value = true
-            _lastInternalThought.value = "Interpreting: '$command'..."
+            _lastInternalThought.value = "Passing recognized directive to Gemini API for intent processing: '$command'..."
 
             val result = aiEngine.processCommand(command)
 
+            _isLastGeminiPowered.value = result.isGeminiPowered
             _lastSpokenResponse.value = result.spokenResponse
             _lastInternalThought.value = if (result.thought.isNotEmpty()) result.thought else "Executing directives."
+            _lastActionType.value = result.actions.firstOrNull()?.actionType ?: "SPEAK_ONLY"
 
             // Execute dispatched tool actions
             for (action in result.actions) {
@@ -175,6 +220,22 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 repository.addEvent(newEvent)
                 _uiEvents.emit(JarvisUiEvent.ShowToast("Event scheduled: ${newEvent.title}"))
+            }
+
+            "CREATE_REMINDER" -> {
+                val reminder = UserScheduleReminder(
+                    title = action.title ?: "Important Directive",
+                    notes = action.reminderNotes ?: "Logged via J.A.R.V.I.S.",
+                    dueDateString = action.date ?: "2026-10-09",
+                    dueTimeString = action.time ?: "09:30 AM",
+                    priority = action.reminderPriority ?: "HIGH"
+                )
+                repository.addReminder(reminder)
+                _uiEvents.emit(JarvisUiEvent.ShowToast("Reminder logged: ${reminder.title}"))
+            }
+
+            "QUERY_CONTEXT" -> {
+                _currentScreen.value = JarvisNavigationScreen.Calendar
             }
 
             "DELETE_EVENT" -> {
@@ -284,6 +345,35 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // Direct UI interactions
+    fun handleScheduleMeetingShortcut() {
+        viewModelScope.launch {
+            _currentScreen.value = JarvisNavigationScreen.Calendar
+            _showScheduleMeetingDialog.value = true
+            voiceSpeechManager.speak("Opening meeting coordinator, Sir. Ready to schedule your session.")
+            _uiEvents.emit(JarvisUiEvent.ShowToast("Shortcut: Schedule Meeting Activated"))
+        }
+    }
+
+    fun handleToggleLightsShortcut() {
+        viewModelScope.launch {
+            val allLights = devices.value.filter { it.type == "LIGHT" || it.id.startsWith("light_") }
+            val anyOn = if (allLights.isNotEmpty()) allLights.any { it.isOn } else false
+            val targetState = !anyOn
+
+            if (allLights.isNotEmpty()) {
+                allLights.forEach { device ->
+                    repository.setDevicePower(device.id, targetState)
+                }
+            } else {
+                repository.setDevicePower("light_living_room", targetState)
+            }
+
+            val statusText = if (targetState) "illuminated" else "extinguished"
+            voiceSpeechManager.speak("Smart lights $statusText, Sir.")
+            _uiEvents.emit(JarvisUiEvent.ShowToast("Smart Lights: ${if (targetState) "ON" else "OFF"}"))
+        }
+    }
+
     fun toggleDevicePower(id: String, currentState: Boolean) {
         viewModelScope.launch {
             repository.setDevicePower(id, !currentState)
@@ -323,6 +413,65 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun deleteEvent(event: CalendarEvent) {
         viewModelScope.launch {
             repository.deleteEvent(event)
+        }
+    }
+
+    fun addNewReminder(title: String, dueDate: String, dueTime: String, priority: String, notes: String = "") {
+        viewModelScope.launch {
+            repository.addReminder(
+                UserScheduleReminder(
+                    title = title,
+                    dueDateString = dueDate,
+                    dueTimeString = dueTime,
+                    priority = priority,
+                    notes = notes
+                )
+            )
+            voiceSpeechManager.speak("Reminder for '$title' registered in schedule memory.")
+        }
+    }
+
+    fun toggleReminder(id: Long, completed: Boolean) {
+        viewModelScope.launch {
+            repository.toggleReminder(id, completed)
+        }
+    }
+
+    fun deleteReminder(reminder: UserScheduleReminder) {
+        viewModelScope.launch {
+            repository.deleteReminder(reminder)
+        }
+    }
+
+    fun updateHubCredentials(hubType: String, url: String, token: String) {
+        smartHomeManager.updateCredentials(hubType, url, token)
+    }
+
+    fun testHubConnection() {
+        viewModelScope.launch {
+            val result = smartHomeManager.testConnection()
+            if (result.isSuccess) {
+                _uiEvents.emit(JarvisUiEvent.ShowToast("Home Assistant API connected!"))
+                voiceSpeechManager.speak("Home Assistant telemetry verified online, Sir.")
+            } else {
+                val err = result.exceptionOrNull()?.message ?: "Connection failed"
+                _uiEvents.emit(JarvisUiEvent.ShowToast(err))
+                voiceSpeechManager.speak("Unable to establish link with Home Assistant. Check URL and access token.")
+            }
+        }
+    }
+
+    fun syncHubDevices() {
+        viewModelScope.launch {
+            val result = smartHomeManager.syncEntitiesFromHub()
+            if (result.isSuccess) {
+                val count = result.getOrDefault(0)
+                _uiEvents.emit(JarvisUiEvent.ShowToast("Synchronized $count smart home entities"))
+                voiceSpeechManager.speak("Synchronized $count smart home entities from Home Assistant, Sir.")
+            } else {
+                val err = result.exceptionOrNull()?.message ?: "Sync error"
+                _uiEvents.emit(JarvisUiEvent.ShowToast("Sync failed: $err"))
+            }
         }
     }
 
@@ -391,6 +540,18 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun toggleVoiceListening() {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            getApplication(),
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasPermission) {
+            viewModelScope.launch {
+                _uiEvents.emit(JarvisUiEvent.RequestRecordAudio("Microphone permission required for speech recognition"))
+            }
+            return
+        }
+
         if (voiceSpeechManager.isListening.value) {
             voiceSpeechManager.stopListening()
         } else {

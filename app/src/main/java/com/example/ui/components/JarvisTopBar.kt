@@ -18,7 +18,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.theme.JarvisAmber
 import com.example.ui.theme.JarvisBg
 import com.example.ui.theme.JarvisCyan
+import com.example.ui.theme.JarvisNeonTeal
 import com.example.ui.theme.JarvisOnline
 import com.example.ui.theme.JarvisSurfaceVariant
 import com.example.ui.theme.JarvisTextPrimary
@@ -49,6 +52,8 @@ fun JarvisTopBar(
     onToggleTts: () -> Unit,
     onVoiceSettingsClick: () -> Unit,
     onDiagnosticsClick: () -> Unit,
+    onHomeScreenClick: () -> Unit = {},
+    onWebAppInstallClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -143,6 +148,30 @@ fun JarvisTopBar(
                     imageVector = Icons.Default.Info,
                     contentDescription = "Diagnostics",
                     tint = JarvisTextPrimary
+                )
+            }
+
+            // Home Screen Pin & Widget Guide Button
+            IconButton(
+                onClick = onHomeScreenClick,
+                modifier = Modifier.testTag("home_screen_pin_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Home,
+                    contentDescription = "Home Screen Setup",
+                    tint = JarvisCyan
+                )
+            }
+
+            // Web App Companion & Direct Install Button
+            IconButton(
+                onClick = onWebAppInstallClick,
+                modifier = Modifier.testTag("web_app_install_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Language,
+                    contentDescription = "Web App & Direct Install",
+                    tint = JarvisNeonTeal
                 )
             }
         }

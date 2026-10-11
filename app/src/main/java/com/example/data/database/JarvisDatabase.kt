@@ -11,13 +11,16 @@ import com.example.data.dao.CallLogDao
 import com.example.data.dao.ContactDao
 import com.example.data.dao.EmailDao
 import com.example.data.dao.HomeDao
+import com.example.data.dao.ScheduleHistoryDao
 import com.example.data.model.AssistantLog
 import com.example.data.model.CalendarEvent
 import com.example.data.model.CallLogEntry
 import com.example.data.model.ContactPerson
 import com.example.data.model.EmailMessage
+import com.example.data.model.ScheduleHistoryContext
 import com.example.data.model.SmartDevice
 import com.example.data.model.SmartRoutine
+import com.example.data.model.UserScheduleReminder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -25,6 +28,8 @@ import kotlinx.coroutines.launch
 @Database(
     entities = [
         CalendarEvent::class,
+        UserScheduleReminder::class,
+        ScheduleHistoryContext::class,
         EmailMessage::class,
         ContactPerson::class,
         CallLogEntry::class,
@@ -37,6 +42,7 @@ import kotlinx.coroutines.launch
 )
 abstract class JarvisDatabase : RoomDatabase() {
     abstract fun calendarDao(): CalendarDao
+    abstract fun scheduleHistoryDao(): ScheduleHistoryDao
     abstract fun emailDao(): EmailDao
     abstract fun contactDao(): ContactDao
     abstract fun callLogDao(): CallLogDao
@@ -128,7 +134,71 @@ abstract class JarvisDatabase : RoomDatabase() {
                 )
             )
 
-            // 2. Initial Emails
+            // 2. Initial Schedule Reminders
+            val initialReminders = listOf(
+                UserScheduleReminder(
+                    title = "Sign Clean Energy micro-grid proposal",
+                    notes = "Priority review before 10 AM board session with Pepper.",
+                    dueDateString = "2026-10-09",
+                    dueTimeString = "09:30 AM",
+                    priority = "HIGH",
+                    category = "BRIEFING"
+                ),
+                UserScheduleReminder(
+                    title = "Calibrate Repulsor coils in Sub-level 3",
+                    notes = "Ensure nanotech yield stable above 95% before firing tests.",
+                    dueDateString = "2026-10-09",
+                    dueTimeString = "02:00 PM",
+                    priority = "HIGH",
+                    category = "LAB"
+                ),
+                UserScheduleReminder(
+                    title = "Follow up with Peter on web-shooter polymer",
+                    notes = "Test tensile elasticity improvements in workshop.",
+                    dueDateString = "2026-10-10",
+                    dueTimeString = "04:00 PM",
+                    priority = "MEDIUM",
+                    category = "PERSONAL"
+                ),
+                UserScheduleReminder(
+                    title = "Verify Perimeter Shield harmonics",
+                    notes = "Run automated diagnostics on tower defensive barrier.",
+                    dueDateString = "2026-10-10",
+                    dueTimeString = "08:00 PM",
+                    priority = "MEDIUM",
+                    category = "REMINDER"
+                )
+            )
+            calendarDao.insertReminders(initialReminders)
+
+            // 3. Initial Schedule History Context (past interactions memory)
+            val scheduleHistoryDao = database.scheduleHistoryDao()
+            val initialHistory = listOf(
+                ScheduleHistoryContext(
+                    userDirective = "Schedule quarterly board review for tomorrow at 10 AM",
+                    resolvedAction = "SCHEDULE_CREATED",
+                    contextSummary = "Added Stark Industries Quarterly Board Meeting for 2026-10-09 at 10:00 AM in Tower Executive Suite with Pepper Potts.",
+                    relatedTitle = "Stark Industries Quarterly Board Meeting",
+                    timestamp = now - 7200000
+                ),
+                ScheduleHistoryContext(
+                    userDirective = "Remind me to sign the clean energy proposal before the meeting",
+                    resolvedAction = "REMINDER_SET",
+                    contextSummary = "Created High-priority reminder for 09:30 AM before executive board session.",
+                    relatedTitle = "Sign Clean Energy micro-grid proposal",
+                    timestamp = now - 6800000
+                ),
+                ScheduleHistoryContext(
+                    userDirective = "Move Mark 85 calibration to sub-level 3 workshop",
+                    resolvedAction = "SCHEDULE_MODIFIED",
+                    contextSummary = "Updated diagnostic calibration location to Workshop Sub-level 3, duration set to 60 minutes.",
+                    relatedTitle = "Mark 85 Armor Diagnostic Calibration",
+                    timestamp = now - 4500000
+                )
+            )
+            scheduleHistoryDao.insertHistoryList(initialHistory)
+
+            // 4. Initial Emails
             val emailDao = database.emailDao()
             emailDao.insertEmail(
                 EmailMessage(
@@ -183,7 +253,7 @@ abstract class JarvisDatabase : RoomDatabase() {
                 )
             )
 
-            // 3. Contacts
+            // 5. Contacts
             val contactDao = database.contactDao()
             val contacts = listOf(
                 ContactPerson(name = "Pepper Potts", phone = "+1 (555) 019-2831", email = "pepper@stark.industries", role = "CEO - Stark Industries", avatarColorHex = "#FF4081", isFavorite = true),
@@ -195,7 +265,7 @@ abstract class JarvisDatabase : RoomDatabase() {
             )
             contactDao.insertContacts(contacts)
 
-            // 4. Call Logs
+            // 6. Call Logs
             val callLogDao = database.callLogDao()
             val logs = listOf(
                 CallLogEntry(contactName = "Pepper Potts", phone = "+1 (555) 019-2831", type = "INCOMING", timeFormatted = "Today, 08:30 AM", durationSeconds = 240, timestamp = now - 4000000),
@@ -204,7 +274,7 @@ abstract class JarvisDatabase : RoomDatabase() {
             )
             callLogDao.insertCallLogs(logs)
 
-            // 5. Smart Home Devices
+            // 7. Smart Home Devices
             val homeDao = database.homeDao()
             val devices = listOf(
                 SmartDevice(id = "light_living_room", name = "Living Room Chandelier", room = "Living Room", type = "LIGHT", isOn = true, numericValue = 85f, mode = "Warm Amber"),
@@ -218,7 +288,7 @@ abstract class JarvisDatabase : RoomDatabase() {
             )
             homeDao.insertDevices(devices)
 
-            // 6. Smart Routines
+            // 8. Smart Routines
             val routines = listOf(
                 SmartRoutine(
                     id = "routine_good_morning",
@@ -255,12 +325,12 @@ abstract class JarvisDatabase : RoomDatabase() {
             )
             homeDao.insertRoutines(routines)
 
-            // 7. Initial Assistant Log
+            // 9. Initial Assistant Log
             val assistantLogDao = database.assistantLogDao()
             assistantLogDao.insertLog(
                 AssistantLog(
                     userInput = "System Initialization",
-                    jarvisResponse = "All systems operational, Sir. Arc Reactor core at 99.4% efficiency. Calendar, communications, application controls, and environmental automation standing by for your command.",
+                    jarvisResponse = "All systems operational, Sir. Arc Reactor core at 99.4% efficiency. Schedule memory database, reminders, and environmental automation standing by for your command.",
                     actionType = "DIAGNOSTICS",
                     status = "SUCCESS"
                 )

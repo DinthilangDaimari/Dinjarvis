@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,15 +23,27 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AcUnit
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -72,6 +85,17 @@ fun SmartHomeScreen(
 ) {
     val devices by viewModel.devices.collectAsState()
     val routines by viewModel.routines.collectAsState()
+    val hubType by viewModel.smartHomeManager.hubType.collectAsState()
+    val hubBaseUrl by viewModel.smartHomeManager.hubBaseUrl.collectAsState()
+    val apiToken by viewModel.smartHomeManager.apiToken.collectAsState()
+    val isConnected by viewModel.smartHomeManager.isConnected.collectAsState()
+    val lastSyncStatus by viewModel.smartHomeManager.lastSyncStatus.collectAsState()
+
+    var showHubConfig by remember { mutableStateOf(false) }
+    var inputHubType by remember(hubType) { mutableStateOf(hubType) }
+    var inputUrl by remember(hubBaseUrl) { mutableStateOf(hubBaseUrl) }
+    var inputToken by remember(apiToken) { mutableStateOf(apiToken) }
+
     var selectedRoom by remember { mutableStateOf("All") }
 
     val rooms = listOf("All", "Living Room", "Workshop Lab", "Penthouse", "Arc Reactor Core", "Perimeter")
@@ -84,48 +108,278 @@ fun SmartHomeScreen(
             .padding(horizontal = 16.dp)
     ) {
         // Header
-        Column(modifier = Modifier.padding(vertical = 12.dp)) {
-            Text(
-                text = "HOME AUTOMATION",
-                fontFamily = OrbitronFontFamily,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = JarvisCyan
-            )
-            Text(
-                text = "Environmental and security relays active",
-                fontFamily = RajdhaniFontFamily,
-                fontSize = 13.sp,
-                color = JarvisTextSecondary
-            )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "HOME AUTOMATION",
+                    fontFamily = OrbitronFontFamily,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = JarvisCyan
+                )
+                Text(
+                    text = "Smart Home IoT Relays (Home Assistant / Google Home)",
+                    fontFamily = RajdhaniFontFamily,
+                    fontSize = 13.sp,
+                    color = JarvisTextSecondary
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(JarvisSurfaceVariant)
+                    .border(1.dp, JarvisCyan.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                    .clickable { showHubConfig = !showHubConfig }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Configure Hub",
+                        tint = JarvisCyan,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (showHubConfig) "CLOSE" else "HUB CONFIG",
+                        fontFamily = OrbitronFontFamily,
+                        fontSize = 10.sp,
+                        color = JarvisCyan,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
 
-        // Voice directive tip
+        // Hub Integration Status Banner
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 10.dp),
+                .padding(bottom = 10.dp)
+                .testTag("hub_status_card"),
             shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = JarvisSurfaceVariant),
-            border = androidx.compose.foundation.BorderStroke(0.5.dp, JarvisCyan.copy(alpha = 0.3f))
+            colors = CardDefaults.cardColors(containerColor = JarvisSurface),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isConnected) JarvisCyan.copy(alpha = 0.6f) else JarvisCardBorder
+            )
         ) {
-            Row(
-                modifier = Modifier.padding(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Home,
-                    contentDescription = null,
-                    tint = JarvisAmber,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(if (isConnected) JarvisOnline else JarvisAmber)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (hubType == "GOOGLE_HOME") "GOOGLE HOME RELAY" else "HOME ASSISTANT CORE",
+                            fontFamily = OrbitronFontFamily,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = JarvisTextPrimary
+                        )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (isConnected) "ONLINE" else "LOCAL READY",
+                            fontFamily = OrbitronFontFamily,
+                            fontSize = 11.sp,
+                            color = if (isConnected) JarvisOnline else JarvisAmber,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Voice command: \"Jarvis, set workshop lights to 100%\" or \"Lockdown the tower\"",
+                    text = lastSyncStatus,
                     fontFamily = RajdhaniFontFamily,
                     fontSize = 12.sp,
-                    color = JarvisTextPrimary
+                    color = JarvisTextSecondary
                 )
+            }
+        }
+
+        // Expandable Hub Configuration Panel
+        AnimatedVisibility(visible = showHubConfig) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+                    .testTag("hub_config_panel"),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = JarvisSurfaceVariant),
+                border = androidx.compose.foundation.BorderStroke(1.dp, JarvisCyan)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = "SMART HOME SERVICE CONFIGURATION",
+                        fontFamily = OrbitronFontFamily,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = JarvisCyan
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Hub Type Selector Chips
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("HOME_ASSISTANT" to "Home Assistant", "GOOGLE_HOME" to "Google Home").forEach { (typeKey, label) ->
+                            val isSel = inputHubType == typeKey
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSel) JarvisCyan else JarvisSurface)
+                                    .border(1.dp, if (isSel) JarvisCyan else JarvisCardBorder, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        inputHubType = typeKey
+                                        if (typeKey == "GOOGLE_HOME" && inputUrl.contains("8123")) {
+                                            inputUrl = "https://smartdevicemanagement.googleapis.com/"
+                                        } else if (typeKey == "HOME_ASSISTANT" && inputUrl.contains("googleapis")) {
+                                            inputUrl = "http://homeassistant.local:8123"
+                                        }
+                                    }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontFamily = RajdhaniFontFamily,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSel) Color.Black else JarvisTextPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = inputUrl,
+                        onValueChange = { inputUrl = it },
+                        label = { Text("Hub Endpoint URL") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("hub_url_field"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = JarvisCyan,
+                            unfocusedBorderColor = JarvisCardBorder,
+                            focusedTextColor = JarvisTextPrimary,
+                            unfocusedTextColor = JarvisTextPrimary
+                        ),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = inputToken,
+                        onValueChange = { inputToken = it },
+                        label = { Text(if (inputHubType == "GOOGLE_HOME") "OAuth / Webhook Key" else "Long-Lived Access Token") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("hub_token_field"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = JarvisCyan,
+                            unfocusedBorderColor = JarvisCardBorder,
+                            focusedTextColor = JarvisTextPrimary,
+                            unfocusedTextColor = JarvisTextPrimary
+                        ),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                viewModel.updateHubCredentials(inputHubType, inputUrl, inputToken)
+                                viewModel.testHubConnection()
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("test_hub_btn"),
+                            colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan)
+                        ) {
+                            Icon(imageVector = Icons.Default.Wifi, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("TEST LINK", fontFamily = OrbitronFontFamily, fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.updateHubCredentials(inputHubType, inputUrl, inputToken)
+                                viewModel.syncHubDevices()
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("sync_hub_btn"),
+                            colors = ButtonDefaults.buttonColors(containerColor = JarvisSurface),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, JarvisCyan)
+                        ) {
+                            Icon(imageVector = Icons.Default.Refresh, contentDescription = null, tint = JarvisCyan, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("SYNC ENTITIES", fontFamily = OrbitronFontFamily, fontSize = 11.sp, color = JarvisCyan, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Voice Command Suggestions Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(
+                "Turn on living room lights" to "Lights On",
+                "Set workshop lights to 80%" to "Workshop 80%",
+                "Set thermostat to 72 degrees" to "Temp 72°F",
+                "Lockdown the vault" to "Lock Vault",
+                "Activate Protocol Night Watch" to "Night Watch",
+                "Engage Protocol House Party" to "Party Mode"
+            ).forEach { (command, label) ->
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(JarvisSurfaceVariant)
+                        .border(0.5.dp, JarvisAmber.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        .clickable { viewModel.executeCommand(command) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "🎤 $label",
+                        fontFamily = RajdhaniFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = JarvisAmber
+                    )
+                }
             }
         }
 

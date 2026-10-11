@@ -4,8 +4,10 @@ import com.example.BuildConfig
 import com.example.data.model.CalendarEvent
 import com.example.data.model.EmailMessage
 import com.example.data.model.SmartDevice
+import com.example.data.model.UserScheduleReminder
 import com.example.data.repository.JarvisRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -31,7 +33,9 @@ data class ToolAction(
     val deviceId: String? = null,
     val turnOn: Boolean? = null,
     val numericValue: Float? = null,
-    val routineId: String? = null
+    val routineId: String? = null,
+    val reminderPriority: String? = null,
+    val reminderNotes: String? = null
 )
 
 data class JarvisAiResult(
@@ -91,15 +95,17 @@ You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), the world's most a
 Current Date: 2026-10-08.
 You are assisting Tony Stark (or the User/Sir). Speak with Jarvis's iconic polite, sophisticated, slightly dry-witted and hyper-efficient British tone. Always address the user respectfully ("Sir", "Mr. Stark").
 
-You have direct control over 5 operational domains:
-1. Calendar (view, schedule events, cancel events)
+You have direct control over 5 operational domains, plus complete access to Room database Schedule Reminders and Past Context & Directives history:
+1. Calendar & Reminders (view, schedule events, set reminders, query past context)
 2. Email (view unread, compose, send)
 3. Phone & Contacts (dial phone numbers, call contacts, check logs)
 4. System Applications (launch apps like Browser, YouTube, Maps, Camera, Calculator, Clock, Settings)
 5. Home Automation & IoT (control lights, thermostat, locks, blinds, arc reactor shield, activate protocols like Daybreak, Night Watch, Lab Focus, House Party)
 
-CURRENT ENVIRONMENT SNAPSHOT:
+CURRENT ENVIRONMENT SNAPSHOT & HISTORICAL MEMORY:
 $systemSnapshot
+
+When the user asks about past schedule directives, reminders, or previous context, actively utilize the retrieved memory and past context records provided above!
 
 You MUST respond strictly with valid JSON conforming to this schema:
 {
@@ -107,11 +113,13 @@ You MUST respond strictly with valid JSON conforming to this schema:
   "spokenResponse": "Crisp, elegant spoken response addressed to Sir",
   "actions": [
     {
-      "actionType": "SCHEDULE_EVENT" | "DELETE_EVENT" | "SEND_EMAIL" | "READ_EMAILS" | "CALL_PHONE" | "LAUNCH_APP" | "SET_HOME_DEVICE" | "RUN_ROUTINE" | "DIAGNOSTICS" | "SPEAK_ONLY",
-      "title": "Event title or subject if applicable",
+      "actionType": "SCHEDULE_EVENT" | "CREATE_REMINDER" | "QUERY_CONTEXT" | "DELETE_EVENT" | "SEND_EMAIL" | "READ_EMAILS" | "CALL_PHONE" | "LAUNCH_APP" | "SET_HOME_DEVICE" | "RUN_ROUTINE" | "DIAGNOSTICS" | "SPEAK_ONLY",
+      "title": "Event or reminder title",
       "date": "YYYY-MM-DD",
       "time": "HH:MM AM/PM",
       "location": "Location if applicable",
+      "reminderPriority": "HIGH" | "MEDIUM" | "LOW",
+      "reminderNotes": "Additional reminder notes",
       "recipient": "Email address or recipient name",
       "subject": "Email subject",
       "body": "Email body message",
@@ -155,7 +163,7 @@ You MUST respond strictly with valid JSON conforming to this schema:
         return root.toString()
     }
 
-    private fun parseGeminiResponse(rawJson: String, originalQuery: String): JarvisAiResult {
+    private suspend fun parseGeminiResponse(rawJson: String, originalQuery: String): JarvisAiResult {
         return try {
             val root = JSONObject(rawJson)
             val candidates = root.optJSONArray("candidates")
@@ -164,7 +172,14 @@ You MUST respond strictly with valid JSON conforming to this schema:
             val parts = content?.optJSONArray("parts")
             val text = parts?.optJSONObject(0)?.optString("text") ?: ""
 
-            val parsedPayload = JSONObject(text)
+            val cleanedText = text.trim()
+                .removePrefix("```json")
+                .removePrefix("```JSON")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+
+            val parsedPayload = JSONObject(cleanedText)
             val spoken = parsedPayload.optString("spokenResponse", "At your service, Sir.")
             val thought = parsedPayload.optString("thought", "")
             val actionsArray = parsedPayload.optJSONArray("actions")
@@ -180,6 +195,8 @@ You MUST respond strictly with valid JSON conforming to this schema:
                             date = obj.optString("date").takeIf { it.isNotEmpty() },
                             time = obj.optString("time").takeIf { it.isNotEmpty() },
                             location = obj.optString("location").takeIf { it.isNotEmpty() },
+                            reminderPriority = obj.optString("reminderPriority").takeIf { it.isNotEmpty() },
+                            reminderNotes = obj.optString("reminderNotes").takeIf { it.isNotEmpty() },
                             recipient = obj.optString("recipient").takeIf { it.isNotEmpty() },
                             subject = obj.optString("subject").takeIf { it.isNotEmpty() },
                             body = obj.optString("body").takeIf { it.isNotEmpty() },
@@ -211,13 +228,52 @@ You MUST respond strictly with valid JSON conforming to this schema:
      * Highly capable local heuristic assistant ensuring zero-latency response
      * even when offline or before the user configures their Gemini API key.
      */
-    private fun parseWithLocalIntelligence(query: String, note: String = ""): JarvisAiResult {
+    private suspend fun parseWithLocalIntelligence(query: String, note: String = ""): JarvisAiResult {
         val lower = query.lowercase().trim()
         val actions = mutableListOf<ToolAction>()
         var spoken = "Certainly, Sir. I am processing your directive."
 
         when {
-            // 1. Calendar
+            // Reminders explicitly
+            lower.contains("remind") || lower.contains("reminder") -> {
+                if (lower.contains("what") || lower.contains("list") || lower.contains("show") || lower.contains("check")) {
+                    val currentReminders = repository.reminders.first().filter { !it.isCompleted }
+                    if (currentReminders.isEmpty()) {
+                        spoken = "You have no active schedule reminders at present, Sir."
+                    } else {
+                        val first = currentReminders.first()
+                        spoken = "You have ${currentReminders.size} active reminders in your schedule memory, Sir. Primary task: '${first.title}', scheduled for ${first.dueDateString} at ${first.dueTimeString}."
+                    }
+                    actions.add(ToolAction(actionType = "QUERY_CONTEXT"))
+                } else {
+                    val reminderTitle = if (lower.contains("to ")) query.substringAfter("to ").trim() else "Priority Objective"
+                    spoken = "I have logged a high-priority reminder for '$reminderTitle' into your memory schedule, Sir."
+                    actions.add(
+                        ToolAction(
+                            actionType = "CREATE_REMINDER",
+                            title = reminderTitle,
+                            date = "2026-10-09",
+                            time = "09:30 AM",
+                            reminderPriority = "HIGH",
+                            reminderNotes = "Logged via J.A.R.V.I.S. voice directive"
+                        )
+                    )
+                }
+            }
+
+            // Historical context query
+            lower.contains("history") || lower.contains("past") || lower.contains("earlier") || lower.contains("context") -> {
+                val pastContext = repository.scheduleHistory.first()
+                if (pastContext.isEmpty()) {
+                    spoken = "Schedule history memory is clear, Sir."
+                } else {
+                    val recent = pastContext.take(2).joinToString("; ") { it.contextSummary }
+                    spoken = "Retrieving past schedule context from memory, Sir: $recent."
+                }
+                actions.add(ToolAction(actionType = "QUERY_CONTEXT"))
+            }
+
+            // Calendar
             lower.contains("meeting") || lower.contains("schedule") || lower.contains("calendar") || lower.contains("appointment") -> {
                 if (lower.contains("what") || lower.contains("show") || lower.contains("check") || lower.contains("list")) {
                     spoken = "Accessing your schedule, Sir. You have the Stark Industries Quarterly Board Review tomorrow morning at 10:00 AM, followed by Mark 85 armor calibration at 2:30 PM."
@@ -236,7 +292,7 @@ You MUST respond strictly with valid JSON conforming to this schema:
                 }
             }
 
-            // 2. Email
+            // Email
             lower.contains("email") || lower.contains("mail") || lower.contains("inbox") -> {
                 if (lower.contains("send") || lower.contains("compose") || lower.contains("write")) {
                     spoken = "Preparing draft message for Ms. Potts, Sir. Message queued for dispatch."
@@ -254,7 +310,7 @@ You MUST respond strictly with valid JSON conforming to this schema:
                 }
             }
 
-            // 3. Phone & Calls
+            // Phone & Calls
             lower.contains("call") || lower.contains("dial") || lower.contains("phone") -> {
                 val target = when {
                     lower.contains("pepper") -> Pair("Pepper Potts", "+1 (555) 019-2831")
@@ -274,7 +330,7 @@ You MUST respond strictly with valid JSON conforming to this schema:
                 )
             }
 
-            // 4. Applications
+            // Applications
             lower.contains("open") || lower.contains("launch") || lower.contains("start app") -> {
                 val app = when {
                     lower.contains("youtube") -> Pair("YouTube", "com.google.android.youtube")
@@ -295,62 +351,105 @@ You MUST respond strictly with valid JSON conforming to this schema:
                 )
             }
 
-            // 5. Smart Home & Automation
-            lower.contains("light") || lower.contains("lamp") || lower.contains("thermostat") || lower.contains("temp") || lower.contains("lock") || lower.contains("shield") || lower.contains("blind") -> {
-                if (lower.contains("off") || lower.contains("dim") || lower.contains("turn off")) {
-                    spoken = "Disengaging the requested lighting sectors, Sir."
+            // Smart Home - Climate & Thermostat
+            lower.contains("thermostat") || lower.contains("temp") || lower.contains("degrees") || lower.contains("climate") || lower.contains("heat") || lower.contains("cool") || lower.contains("ac ") || lower.endsWith("ac") -> {
+                val temp = Regex("""\b(\d{2}(?:\.\d+)?)\b""").find(lower)?.groupValues?.get(1)?.toFloatOrNull() ?: 72f
+                val deviceId = if (lower.contains("penthouse")) "climate_penthouse" else "climate_living_room"
+                spoken = "Adjusting environmental temperature to ${temp.toInt()} degrees, Sir. Climate relay updated."
+                actions.add(
+                    ToolAction(
+                        actionType = "SET_HOME_DEVICE",
+                        deviceId = deviceId,
+                        turnOn = true,
+                        numericValue = temp
+                    )
+                )
+            }
+
+            // Smart Home - Lights
+            lower.contains("light") || lower.contains("lamp") || lower.contains("illuminate") || lower.contains("illumination") || lower.contains("brightness") -> {
+                val isTurnOff = lower.contains("off") || lower.contains("kill") || lower.contains("shut") || lower.contains("dark")
+                val deviceId = when {
+                    lower.contains("workshop") || lower.contains("lab") -> "light_workshop"
+                    lower.contains("penthouse") -> "light_penthouse"
+                    else -> "light_living_room"
+                }
+                val roomName = if (deviceId == "light_workshop") "Workshop" else "Living Room"
+                if (isTurnOff) {
+                    spoken = "Disengaging $roomName illumination sectors, Sir."
                     actions.add(
                         ToolAction(
                             actionType = "SET_HOME_DEVICE",
-                            deviceId = if (lower.contains("workshop")) "light_workshop" else "light_living_room",
+                            deviceId = deviceId,
                             turnOn = false,
                             numericValue = 0f
                         )
                     )
-                } else if (lower.contains("workshop")) {
-                    spoken = "Workshop illumination set to full cyan output, Sir. Cryo-regulator optimized."
-                    actions.add(
-                        ToolAction(
-                            actionType = "SET_HOME_DEVICE",
-                            deviceId = "light_workshop",
-                            turnOn = true,
-                            numericValue = 100f
-                        )
-                    )
-                } else if (lower.contains("thermostat") || lower.contains("temp") || lower.contains("degrees")) {
-                    spoken = "Adjusting environmental temperature to 70 degrees, Sir."
-                    actions.add(
-                        ToolAction(
-                            actionType = "SET_HOME_DEVICE",
-                            deviceId = "climate_living_room",
-                            turnOn = true,
-                            numericValue = 70f
-                        )
-                    )
-                } else if (lower.contains("lock") || lower.contains("secure")) {
-                    spoken = "Main air-lock and vault seals engaged, Sir. Perimeter barrier verified."
-                    actions.add(
-                        ToolAction(
-                            actionType = "SET_HOME_DEVICE",
-                            deviceId = "lock_main_vault",
-                            turnOn = true,
-                            numericValue = 100f
-                        )
-                    )
                 } else {
-                    spoken = "Illumination active at optimal levels, Sir."
+                    val percentMatch = Regex("""\b(\d+)\s*(?:%|percent)\b""").find(lower)
+                    val brightness = percentMatch?.groupValues?.get(1)?.toFloatOrNull() ?: 100f
+                    spoken = if (brightness < 100f) {
+                        "$roomName illumination dimmed to ${brightness.toInt()}%, Sir."
+                    } else {
+                        "$roomName illumination engaged at full output, Sir."
+                    }
                     actions.add(
                         ToolAction(
                             actionType = "SET_HOME_DEVICE",
-                            deviceId = "light_living_room",
+                            deviceId = deviceId,
                             turnOn = true,
-                            numericValue = 85f
+                            numericValue = brightness
                         )
                     )
                 }
             }
 
-            // 6. Protocols & Routines
+            // Smart Home - Locks & Security
+            lower.contains("lock") || lower.contains("secure") || lower.contains("vault") -> {
+                val isLock = !lower.contains("unlock")
+                spoken = if (isLock) {
+                    "Main air-lock and vault seals engaged, Sir. Perimeter barrier verified."
+                } else {
+                    "Disengaging air-lock seals. Vault unlocked, Sir."
+                }
+                actions.add(
+                    ToolAction(
+                        actionType = "SET_HOME_DEVICE",
+                        deviceId = "lock_main_vault",
+                        turnOn = isLock,
+                        numericValue = if (isLock) 100f else 0f
+                    )
+                )
+            }
+
+            // Smart Home - Shields & Defense
+            lower.contains("shield") || lower.contains("defense") || lower.contains("barrier") -> {
+                spoken = "Arc Reactor harmonic shield calibrated to full defense resonance, Sir."
+                actions.add(
+                    ToolAction(
+                        actionType = "SET_HOME_DEVICE",
+                        deviceId = "perimeter_defense",
+                        turnOn = true,
+                        numericValue = 100f
+                    )
+                )
+            }
+
+            // Smart Home - Blinds
+            lower.contains("blind") || lower.contains("window") || lower.contains("shade") -> {
+                val open = lower.contains("open") || lower.contains("up") || lower.contains("draw")
+                spoken = if (open) "Penthouse automated blinds drawn open, Sir." else "Penthouse blinds lowered for privacy, Sir."
+                actions.add(
+                    ToolAction(
+                        actionType = "SET_HOME_DEVICE",
+                        deviceId = "blinds_living_room",
+                        turnOn = open,
+                        numericValue = if (open) 100f else 0f
+                    )
+                )
+            }
+
+            // Protocols
             lower.contains("protocol") || lower.contains("good morning") || lower.contains("lockdown") || lower.contains("party") || lower.contains("night watch") -> {
                 val routineId = when {
                     lower.contains("morning") || lower.contains("daybreak") -> "routine_good_morning"
@@ -372,15 +471,15 @@ You MUST respond strictly with valid JSON conforming to this schema:
                 )
             }
 
-            // 7. System Diagnostics / Status
+            // Diagnostics
             lower.contains("status") || lower.contains("diagnostics") || lower.contains("arc reactor") || lower.contains("how are you") || lower.contains("power") -> {
                 spoken = "All core systems are nominal, Sir. Arc Reactor core operating at 99.4% output. Cellular transceiver active, perimeter defenses stable, and automation relays responding with zero latency."
                 actions.add(ToolAction(actionType = "DIAGNOSTICS"))
             }
 
-            // Default Greeting / Chat
+            // Default
             else -> {
-                spoken = "At your command, Sir. All primary systems—calendar, communications, applications, and home automation—are standing by for your directive."
+                spoken = "At your command, Sir. All primary systems—calendar, schedule reminders, communications, applications, and home automation—are standing by for your directive."
                 actions.add(ToolAction(actionType = "SPEAK_ONLY"))
             }
         }

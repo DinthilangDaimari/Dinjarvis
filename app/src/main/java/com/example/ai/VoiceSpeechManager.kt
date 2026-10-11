@@ -5,6 +5,8 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -33,22 +35,18 @@ class VoiceSpeechManager(
 ) : TextToSpeech.OnInitListener {
 
     private val scope = CoroutineScope(Dispatchers.Main + Job())
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var textToSpeech: TextToSpeech? = null
     private var speechRecognizer: SpeechRecognizer? = null
     private var pendingSpeechText: String? = null
     private var waveAnimationJob: Job? = null
 
+    // TTS state
     private val _ttsState = MutableStateFlow(TtsInitState.INITIALIZING)
     val ttsState: StateFlow<TtsInitState> = _ttsState.asStateFlow()
 
-    private val _isListening = MutableStateFlow(false)
-    val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
-
     private val _isSpeaking = MutableStateFlow(false)
     val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
-
-    private val _speechRmsLevel = MutableStateFlow(0f)
-    val speechRmsLevel: StateFlow<Float> = _speechRmsLevel.asStateFlow()
 
     private val _ttsEnabled = MutableStateFlow(true)
     val ttsEnabled: StateFlow<Boolean> = _ttsEnabled.asStateFlow()
@@ -62,9 +60,24 @@ class VoiceSpeechManager(
     private val _selectedVoiceLanguage = MutableStateFlow("British English (UK)")
     val selectedVoiceLanguage: StateFlow<String> = _selectedVoiceLanguage.asStateFlow()
 
+    // SpeechRecognizer state
+    private val _isListening = MutableStateFlow(false)
+    val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
+
+    private val _partialSpeechText = MutableStateFlow("")
+    val partialSpeechText: StateFlow<String> = _partialSpeechText.asStateFlow()
+
+    private val _speechRmsLevel = MutableStateFlow(0f)
+    val speechRmsLevel: StateFlow<Float> = _speechRmsLevel.asStateFlow()
+
+    private val _speechError = MutableStateFlow<String?>(null)
+    val speechError: StateFlow<String?> = _speechError.asStateFlow()
+
     init {
         initTtsEngine()
-        initSpeechRecognizer()
+        mainHandler.post {
+            initSpeechRecognizer()
+        }
     }
 
     private fun initTtsEngine() {
@@ -77,50 +90,97 @@ class VoiceSpeechManager(
     }
 
     private fun initSpeechRecognizer() {
-        if (SpeechRecognizer.isRecognitionAvailable(context)) {
-            try {
-                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                    setRecognitionListener(object : RecognitionListener {
-                        override fun onReadyForSpeech(params: Bundle?) {
-                            _isListening.value = true
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            _speechError.value = "Speech recognition service unavailable on this device"
+            return
+        }
+
+        try {
+            speechRecognizer?.destroy()
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context.applicationContext).apply {
+                setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        _isListening.value = true
+                        _partialSpeechText.value = ""
+                        _speechError.value = null
+                    }
+
+                    override fun onBeginningOfSpeech() {
+                        _isListening.value = true
+                    }
+
+                    override fun onRmsChanged(rmsdB: Float) {
+                        // Normalize RMS level between 0.0 and 1.0 for dynamic UI reactivity
+                        val normalized = ((rmsdB + 2f).coerceIn(0f, 10f) / 10f)
+                        _speechRmsLevel.value = normalized
+                    }
+
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+
+                    override fun onEndOfSpeech() {
+                        _isListening.value = false
+                        _speechRmsLevel.value = 0f
+                    }
+
+                    override fun onError(error: Int) {
+                        _isListening.value = false
+                        _speechRmsLevel.value = 0f
+                        val errorMessage = when (error) {
+                            SpeechRecognizer.ERROR_AUDIO -> "Audio recording issue"
+                            SpeechRecognizer.ERROR_CLIENT -> "Voice service busy. Tap to retry or use quick prompts."
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission required"
+                            SpeechRecognizer.ERROR_NETWORK -> "Network error during speech recognition"
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timed out"
+                            SpeechRecognizer.ERROR_NO_MATCH -> "No speech recognized. Tap core to speak again."
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Speech engine busy. Tap to retry."
+                            SpeechRecognizer.ERROR_SERVER -> "Recognition server error"
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected"
+                            else -> "Speech recognition code: $error"
+                        }
+                        _speechError.value = errorMessage
+
+                        if (error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                            try {
+                                speechRecognizer?.destroy()
+                            } catch (_: Exception) {}
+                            speechRecognizer = null
                         }
 
-                        override fun onBeginningOfSpeech() {
-                            _isListening.value = true
-                        }
-
-                        override fun onRmsChanged(rmsdB: Float) {
-                            _speechRmsLevel.value = ((rmsdB + 2f).coerceIn(0f, 10f) / 10f)
-                        }
-
-                        override fun onBufferReceived(buffer: ByteArray?) {}
-
-                        override fun onEndOfSpeech() {
-                            _isListening.value = false
-                            _speechRmsLevel.value = 0f
-                        }
-
-                        override fun onError(error: Int) {
-                            _isListening.value = false
-                            _speechRmsLevel.value = 0f
-                        }
-
-                        override fun onResults(results: Bundle?) {
-                            _isListening.value = false
-                            _speechRmsLevel.value = 0f
-                            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                            val text = matches?.firstOrNull()?.trim()
-                            if (!text.isNullOrEmpty()) {
-                                onVoiceInputFinal(text)
+                        // Auto-clear error after 4 seconds
+                        mainHandler.postDelayed({
+                            if (_speechError.value == errorMessage) {
+                                _speechError.value = null
                             }
+                        }, 4000)
+                    }
+
+                    override fun onResults(results: Bundle?) {
+                        _isListening.value = false
+                        _speechRmsLevel.value = 0f
+                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val text = matches?.firstOrNull()?.trim()
+                        if (!text.isNullOrEmpty()) {
+                            _partialSpeechText.value = text
+                            _speechError.value = null
+                            onVoiceInputFinal(text)
+                        } else {
+                            _speechError.value = "No voice directive captured"
                         }
+                    }
 
-                        override fun onPartialResults(partialResults: Bundle?) {}
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val partials = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val liveText = partials?.firstOrNull()?.trim()
+                        if (!liveText.isNullOrEmpty()) {
+                            _partialSpeechText.value = liveText
+                        }
+                    }
 
-                        override fun onEvent(eventType: Int, params: Bundle?) {}
-                    })
-                }
-            } catch (_: Exception) {}
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
+            }
+        } catch (e: Exception) {
+            _speechError.value = "Failed to initialize SpeechRecognizer: ${e.localizedMessage}"
         }
     }
 
@@ -129,7 +189,6 @@ class VoiceSpeechManager(
             configureTtsParameters()
             _ttsState.value = TtsInitState.READY
 
-            // If an utterance was queued while initializing, speak it now!
             val pending = pendingSpeechText
             if (!pending.isNullOrBlank()) {
                 pendingSpeechText = null
@@ -142,8 +201,6 @@ class VoiceSpeechManager(
 
     private fun configureTtsParameters() {
         val tts = textToSpeech ?: return
-
-        // Set Audio Attributes for clear assistant vocal channel
         try {
             val usage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 AudioAttributes.USAGE_ASSISTANT
@@ -157,7 +214,6 @@ class VoiceSpeechManager(
             tts.setAudioAttributes(audioAttributes)
         } catch (_: Exception) {}
 
-        // Apply selected language
         val locale = when (_selectedVoiceLanguage.value) {
             "American English (US)" -> Locale.US
             "Australian English (AU)" -> Locale.Builder().setLanguage("en").setRegion("AU").build()
@@ -169,11 +225,9 @@ class VoiceSpeechManager(
             tts.setLanguage(Locale.US)
         }
 
-        // Apply pitch and speed
         tts.setPitch(_pitch.value)
         tts.setSpeechRate(_speedRate.value)
 
-        // Progress listener
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
                 _isSpeaking.value = true
@@ -219,7 +273,6 @@ class VoiceSpeechManager(
         stopListening()
 
         if (_ttsState.value != TtsInitState.READY) {
-            // Queue utterance to speak as soon as initialization concludes
             pendingSpeechText = text
             if (_ttsState.value == TtsInitState.ERROR) {
                 initTtsEngine()
@@ -283,37 +336,90 @@ class VoiceSpeechManager(
 
     fun startListening() {
         stopSpeaking()
-        if (speechRecognizer == null) {
-            initSpeechRecognizer()
-        }
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Jarvis...")
-        }
-        try {
-            speechRecognizer?.startListening(intent)
-            _isListening.value = true
-        } catch (_: Exception) {
-            _isListening.value = false
+        _speechError.value = null
+        _partialSpeechText.value = ""
+
+        mainHandler.post {
+            if (speechRecognizer == null) {
+                initSpeechRecognizer()
+            }
+
+            val recognizer = speechRecognizer
+            if (recognizer == null) {
+                _isListening.value = false
+                _speechError.value = "Speech recognition service not ready on this device"
+                return@post
+            }
+
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your command to J.A.R.V.I.S.")
+            }
+
+            try {
+                recognizer.startListening(intent)
+                _isListening.value = true
+            } catch (e: Exception) {
+                _isListening.value = false
+                _speechError.value = "Error starting recognition: ${e.localizedMessage}"
+            }
         }
     }
 
     fun stopListening() {
-        try {
-            speechRecognizer?.stopListening()
-        } catch (_: Exception) {}
-        _isListening.value = false
-        _speechRmsLevel.value = 0f
+        mainHandler.post {
+            try {
+                speechRecognizer?.stopListening()
+            } catch (_: Exception) {}
+            _isListening.value = false
+            _speechRmsLevel.value = 0f
+        }
+    }
+
+    fun cancelListening() {
+        mainHandler.post {
+            try {
+                speechRecognizer?.cancel()
+            } catch (_: Exception) {}
+            _isListening.value = false
+            _speechRmsLevel.value = 0f
+            _partialSpeechText.value = ""
+        }
+    }
+
+    fun createRecognizerIntent(): Intent {
+        return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to J.A.R.V.I.S...")
+        }
+    }
+
+    fun processDirectSpeechResult(text: String) {
+        if (text.isNotBlank()) {
+            _partialSpeechText.value = text
+            _speechError.value = null
+            onVoiceInputFinal(text)
+        }
     }
 
     fun destroy() {
         waveAnimationJob?.cancel()
+        mainHandler.post {
+            try {
+                speechRecognizer?.destroy()
+                speechRecognizer = null
+            } catch (_: Exception) {}
+        }
         try {
-            speechRecognizer?.destroy()
             textToSpeech?.stop()
             textToSpeech?.shutdown()
+            textToSpeech = null
         } catch (_: Exception) {}
     }
 }

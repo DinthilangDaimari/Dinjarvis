@@ -22,10 +22,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -53,10 +57,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.CalendarEvent
+import com.example.data.model.ScheduleHistoryContext
+import com.example.data.model.UserScheduleReminder
+import com.example.ui.theme.JarvisAlert
 import com.example.ui.theme.JarvisAmber
 import com.example.ui.theme.JarvisBg
 import com.example.ui.theme.JarvisCardBorder
 import com.example.ui.theme.JarvisCyan
+import com.example.ui.theme.JarvisNeonTeal
+import com.example.ui.theme.JarvisOnline
 import com.example.ui.theme.JarvisSurface
 import com.example.ui.theme.JarvisSurfaceVariant
 import com.example.ui.theme.JarvisTextPrimary
@@ -65,14 +74,34 @@ import com.example.ui.theme.OrbitronFontFamily
 import com.example.ui.theme.RajdhaniFontFamily
 import com.example.ui.viewmodel.JarvisViewModel
 
+enum class CalendarViewMode {
+    SCHEDULE,
+    REMINDERS,
+    HISTORY_CONTEXT
+}
+
 @Composable
 fun CalendarScreen(
     viewModel: JarvisViewModel,
     modifier: Modifier = Modifier
 ) {
     val events by viewModel.events.collectAsState()
+    val reminders by viewModel.reminders.collectAsState()
+    val historyContext by viewModel.scheduleHistory.collectAsState()
+    val triggerAddMeetingDialog by viewModel.showScheduleMeetingDialog.collectAsState()
+
+    var viewMode by remember { mutableStateOf(CalendarViewMode.SCHEDULE) }
     var selectedCategory by remember { mutableStateOf("All") }
-    var showAddDialog by remember { mutableStateOf(false) }
+    var showAddEventDialog by remember { mutableStateOf(false) }
+    var showAddReminderDialog by remember { mutableStateOf(false) }
+
+    androidx.compose.runtime.LaunchedEffect(triggerAddMeetingDialog) {
+        if (triggerAddMeetingDialog) {
+            viewMode = CalendarViewMode.SCHEDULE
+            showAddEventDialog = true
+            viewModel.clearScheduleMeetingDialog()
+        }
+    }
 
     val categories = listOf("All", "Stark Industries", "Lab", "Defense", "Personal")
     val filteredEvents = if (selectedCategory == "All") events else events.filter { it.category == selectedCategory }
@@ -93,14 +122,14 @@ fun CalendarScreen(
         ) {
             Column {
                 Text(
-                    text = "SCHEDULE TELEMETRY",
+                    text = "SCHEDULE & MEMORY",
                     fontFamily = OrbitronFontFamily,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = JarvisCyan
                 )
                 Text(
-                    text = "${events.size} briefings & appointments synchronized",
+                    text = "${events.size} briefings • ${reminders.count { !it.isCompleted }} active reminders",
                     fontFamily = RajdhaniFontFamily,
                     fontSize = 13.sp,
                     color = JarvisTextSecondary
@@ -112,22 +141,28 @@ fun CalendarScreen(
                     .clip(RoundedCornerShape(12.dp))
                     .background(JarvisCyan.copy(alpha = 0.2f))
                     .border(1.dp, JarvisCyan, RoundedCornerShape(12.dp))
-                    .clickable { showAddDialog = true }
+                    .clickable {
+                        if (viewMode == CalendarViewMode.REMINDERS) {
+                            showAddReminderDialog = true
+                        } else {
+                            showAddEventDialog = true
+                        }
+                    }
                     .testTag("schedule_add_button")
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = "Add Event",
+                        contentDescription = "Add",
                         tint = JarvisCyan,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "NEW EVENT",
+                        text = if (viewMode == CalendarViewMode.REMINDERS) "NEW REMINDER" else "NEW EVENT",
                         fontFamily = OrbitronFontFamily,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = JarvisCyan
                     )
@@ -135,7 +170,44 @@ fun CalendarScreen(
             }
         }
 
-        // Voice command tip
+        // View Mode Switcher: SCHEDULE vs REMINDERS vs HISTORY CONTEXT
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(JarvisSurfaceVariant)
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            CalendarViewMode.values().forEach { mode ->
+                val isSelected = viewMode == mode
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) JarvisCyan else Color.Transparent)
+                        .clickable { viewMode = mode }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = when (mode) {
+                            CalendarViewMode.SCHEDULE -> "EVENTS (${events.size})"
+                            CalendarViewMode.REMINDERS -> "REMINDERS (${reminders.count { !it.isCompleted }})"
+                            CalendarViewMode.HISTORY_CONTEXT -> "MEMORY LOG"
+                        },
+                        fontFamily = OrbitronFontFamily,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) Color.Black else JarvisTextSecondary
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Voice directive tip
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -149,14 +221,22 @@ fun CalendarScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.DateRange,
+                    imageVector = when (viewMode) {
+                        CalendarViewMode.SCHEDULE -> Icons.Default.DateRange
+                        CalendarViewMode.REMINDERS -> Icons.Default.NotificationsActive
+                        CalendarViewMode.HISTORY_CONTEXT -> Icons.Default.History
+                    },
                     contentDescription = null,
                     tint = JarvisAmber,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Voice command: \"Jarvis, schedule a board meeting for tomorrow at 10 AM\"",
+                    text = when (viewMode) {
+                        CalendarViewMode.SCHEDULE -> "Voice: \"Jarvis, schedule meeting with Pepper tomorrow at 10 AM\""
+                        CalendarViewMode.REMINDERS -> "Voice: \"Jarvis, remind me to check the repulsor coils at 2 PM\""
+                        CalendarViewMode.HISTORY_CONTEXT -> "Voice: \"Jarvis, retrieve past schedule context from memory\""
+                    },
                     fontFamily = RajdhaniFontFamily,
                     fontSize = 12.sp,
                     color = JarvisTextPrimary
@@ -164,75 +244,148 @@ fun CalendarScreen(
             }
         }
 
-        // Category filter chips
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            categories.forEach { category ->
-                val isSelected = selectedCategory == category
-                Box(
+        // Content according to view mode
+        when (viewMode) {
+            CalendarViewMode.SCHEDULE -> {
+                // Category filter chips
+                Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSelected) JarvisCyan else JarvisSurface)
-                        .border(1.dp, if (isSelected) JarvisCyan else JarvisCardBorder, RoundedCornerShape(10.dp))
-                        .clickable { selectedCategory = category }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = category,
-                        fontFamily = RajdhaniFontFamily,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isSelected) Color.Black else JarvisTextSecondary
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Event List
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (filteredEvents.isEmpty()) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 40.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "No scheduled events in this sector.",
-                            fontFamily = RajdhaniFontFamily,
-                            fontSize = 14.sp,
-                            color = JarvisTextSecondary
-                        )
+                    categories.forEach { category ->
+                        val isSelected = selectedCategory == category
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) JarvisCyan else JarvisSurface)
+                                .border(1.dp, if (isSelected) JarvisCyan else JarvisCardBorder, RoundedCornerShape(10.dp))
+                                .clickable { selectedCategory = category }
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = category,
+                                fontFamily = RajdhaniFontFamily,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) Color.Black else JarvisTextSecondary
+                            )
+                        }
                     }
                 }
-            } else {
-                items(filteredEvents) { event ->
-                    CalendarEventCard(
-                        event = event,
-                        onDelete = { viewModel.deleteEvent(event) }
-                    )
+
+                // Event List
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (filteredEvents.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No scheduled events in this sector.",
+                                    fontFamily = RajdhaniFontFamily,
+                                    fontSize = 14.sp,
+                                    color = JarvisTextSecondary
+                                )
+                            }
+                        }
+                    } else {
+                        items(filteredEvents) { event ->
+                            CalendarEventCard(
+                                event = event,
+                                onDelete = { viewModel.deleteEvent(event) }
+                            )
+                        }
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(80.dp))
+                    }
                 }
             }
 
-            item {
-                Spacer(modifier = Modifier.height(80.dp))
+            CalendarViewMode.REMINDERS -> {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (reminders.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No active reminders stored in database.",
+                                    fontFamily = RajdhaniFontFamily,
+                                    fontSize = 14.sp,
+                                    color = JarvisTextSecondary
+                                )
+                            }
+                        }
+                    } else {
+                        items(reminders) { reminder ->
+                            ReminderItemCard(
+                                reminder = reminder,
+                                onToggle = { viewModel.toggleReminder(reminder.id, !reminder.isCompleted) },
+                                onDelete = { viewModel.deleteReminder(reminder) }
+                            )
+                        }
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(80.dp))
+                    }
+                }
+            }
+
+            CalendarViewMode.HISTORY_CONTEXT -> {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (historyContext.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No schedule history memory records.",
+                                    fontFamily = RajdhaniFontFamily,
+                                    fontSize = 14.sp,
+                                    color = JarvisTextSecondary
+                                )
+                            }
+                        }
+                    } else {
+                        items(historyContext) { contextItem ->
+                            HistoryContextCard(item = contextItem)
+                        }
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(80.dp))
+                    }
+                }
             }
         }
     }
 
     // Add Event Dialog
-    if (showAddDialog) {
+    if (showAddEventDialog) {
         var title by remember { mutableStateOf("") }
         var date by remember { mutableStateOf("2026-10-10") }
         var time by remember { mutableStateOf("02:00 PM") }
@@ -240,7 +393,7 @@ fun CalendarScreen(
         var category by remember { mutableStateOf("Stark Industries") }
 
         AlertDialog(
-            onDismissRequest = { showAddDialog = false },
+            onDismissRequest = { showAddEventDialog = false },
             title = {
                 Text(
                     text = "SCHEDULE APPOINTMENT",
@@ -302,7 +455,7 @@ fun CalendarScreen(
                     onClick = {
                         if (title.isNotBlank()) {
                             viewModel.addNewEvent(title, date, time, location, category)
-                            showAddDialog = false
+                            showAddEventDialog = false
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan)
@@ -311,13 +464,280 @@ fun CalendarScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddDialog = false }) {
+                TextButton(onClick = { showAddEventDialog = false }) {
                     Text("CANCEL", color = JarvisTextSecondary, fontFamily = OrbitronFontFamily)
                 }
             },
             containerColor = JarvisSurface,
             shape = RoundedCornerShape(16.dp)
         )
+    }
+
+    // Add Reminder Dialog
+    if (showAddReminderDialog) {
+        var title by remember { mutableStateOf("") }
+        var date by remember { mutableStateOf("2026-10-09") }
+        var time by remember { mutableStateOf("09:30 AM") }
+        var priority by remember { mutableStateOf("HIGH") }
+        var notes by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showAddReminderDialog = false },
+            title = {
+                Text(
+                    text = "SET SCHEDULE REMINDER",
+                    fontFamily = OrbitronFontFamily,
+                    fontSize = 16.sp,
+                    color = JarvisAmber
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Reminder Title / Directive") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = JarvisAmber,
+                            focusedTextColor = JarvisTextPrimary,
+                            unfocusedTextColor = JarvisTextPrimary
+                        )
+                    )
+                    OutlinedTextField(
+                        value = date,
+                        onValueChange = { date = it },
+                        label = { Text("Due Date") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = JarvisAmber,
+                            focusedTextColor = JarvisTextPrimary,
+                            unfocusedTextColor = JarvisTextPrimary
+                        )
+                    )
+                    OutlinedTextField(
+                        value = time,
+                        onValueChange = { time = it },
+                        label = { Text("Due Time") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = JarvisAmber,
+                            focusedTextColor = JarvisTextPrimary,
+                            unfocusedTextColor = JarvisTextPrimary
+                        )
+                    )
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text("Notes / Context") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = JarvisAmber,
+                            focusedTextColor = JarvisTextPrimary,
+                            unfocusedTextColor = JarvisTextPrimary
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (title.isNotBlank()) {
+                            viewModel.addNewReminder(title, date, time, priority, notes)
+                            showAddReminderDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = JarvisAmber)
+                ) {
+                    Text("SAVE REMINDER", color = Color.Black, fontFamily = OrbitronFontFamily)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddReminderDialog = false }) {
+                    Text("CANCEL", color = JarvisTextSecondary, fontFamily = OrbitronFontFamily)
+                }
+            },
+            containerColor = JarvisSurface,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+}
+
+@Composable
+fun ReminderItemCard(
+    reminder: UserScheduleReminder,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("reminder_${reminder.id}"),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = JarvisSurface),
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = if (reminder.isCompleted) JarvisCardBorder else JarvisAmber.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                IconButton(
+                    onClick = onToggle,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = if (reminder.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        contentDescription = "Toggle Reminder",
+                        tint = if (reminder.isCompleted) JarvisOnline else JarvisAmber,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = reminder.title,
+                            fontFamily = RajdhaniFontFamily,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (reminder.isCompleted) JarvisTextSecondary else JarvisTextPrimary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(if (reminder.priority == "HIGH") JarvisAlert.copy(alpha = 0.2f) else JarvisCyan.copy(alpha = 0.2f))
+                                .border(0.5.dp, if (reminder.priority == "HIGH") JarvisAlert else JarvisCyan, RoundedCornerShape(4.dp))
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = reminder.priority,
+                                fontFamily = OrbitronFontFamily,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (reminder.priority == "HIGH") JarvisAlert else JarvisCyan
+                            )
+                        }
+                    }
+
+                    if (reminder.notes.isNotBlank()) {
+                        Text(
+                            text = reminder.notes,
+                            fontFamily = RajdhaniFontFamily,
+                            fontSize = 12.sp,
+                            color = JarvisTextSecondary
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Alarm,
+                            contentDescription = null,
+                            tint = JarvisAmber,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "${reminder.dueDateString} • ${reminder.dueTimeString}",
+                            fontFamily = RajdhaniFontFamily,
+                            fontSize = 12.sp,
+                            color = JarvisAmber
+                        )
+                    }
+                }
+            }
+
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete Reminder",
+                    tint = JarvisTextSecondary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun HistoryContextCard(
+    item: ScheduleHistoryContext,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = JarvisSurface),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, JarvisCardBorder)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(JarvisCyan.copy(alpha = 0.15f))
+                        .border(0.5.dp, JarvisCyan, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = item.resolvedAction,
+                        fontFamily = OrbitronFontFamily,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = JarvisCyan
+                    )
+                }
+
+                Text(
+                    text = "MEMORY ARCHIVE",
+                    fontFamily = OrbitronFontFamily,
+                    fontSize = 9.sp,
+                    color = JarvisTextSecondary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Directive: \"${item.userDirective}\"",
+                fontFamily = RajdhaniFontFamily,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = JarvisAmber
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Retrieved Context: ${item.contextSummary}",
+                fontFamily = RajdhaniFontFamily,
+                fontSize = 13.sp,
+                color = JarvisTextPrimary
+            )
+        }
     }
 }
 

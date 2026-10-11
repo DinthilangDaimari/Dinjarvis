@@ -96,16 +96,33 @@ fun ArcReactorCore(
             // 1. Ambient Glow Radial Gradient
             val glowBrush = Brush.radialGradient(
                 colors = listOf(
-                    if (isListening) JarvisAmber.copy(alpha = 0.45f)
+                    if (isListening) JarvisAmber.copy(alpha = (0.45f + rmsLevel * 0.40f).coerceAtMost(0.9f))
                     else if (isSpeaking) JarvisNeonTeal.copy(alpha = 0.40f)
                     else JarvisCyan.copy(alpha = 0.25f),
-                    JarvisCyan.copy(alpha = 0.08f),
+                    if (isListening) Color(0xFFFF6D00).copy(alpha = (0.15f + rmsLevel * 0.25f).coerceAtMost(0.6f))
+                    else JarvisCyan.copy(alpha = 0.08f),
                     Color.Transparent
                 ),
                 center = center,
-                radius = baseRadius * 1.3f
+                radius = baseRadius * (1.3f + if (isListening) rmsLevel * 0.4f else 0f)
             )
-            drawCircle(brush = glowBrush, radius = baseRadius * 1.25f, center = center)
+            drawCircle(brush = glowBrush, radius = baseRadius * (1.25f + if (isListening) rmsLevel * 0.35f else 0f), center = center)
+
+            // 1b. Real-time Audio Shockwave Pulse Rings (SpeechRecognizer RMS reactivity)
+            if (isListening && rmsLevel > 0.05f) {
+                val ringCount = 3
+                for (r in 0 until ringCount) {
+                    val ringRadius = baseRadius * (1.05f + (r * 0.14f) + (rmsLevel * 0.22f))
+                    val ringAlpha = ((1f - (r * 0.28f)) * rmsLevel).coerceIn(0.1f, 0.9f)
+                    val ringStrokeWidth = (1.5f + (rmsLevel * 2.5f) * (1f - r * 0.2f)).dp.toPx()
+                    drawCircle(
+                        color = if (r == 0) JarvisAmber.copy(alpha = ringAlpha) else Color(0xFFFF6D00).copy(alpha = ringAlpha * 0.7f),
+                        radius = ringRadius,
+                        center = center,
+                        style = Stroke(width = ringStrokeWidth)
+                    )
+                }
+            }
 
             // 2. Outer Segmented Ring
             rotate(reverseRotation, pivot = center) {

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="schedule_meeting"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_calendar"
+        android:shortcutShortLabel="@string/shortcut_schedule_meeting_short"
+        android:shortcutLongLabel="@string/shortcut_schedule_meeting_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.jarvisai.vktwrq"
+            android:targetClass="com.example.MainActivity">
+            <extra
+                android:name="shortcut_action"
+                android:value="schedule_meeting" />
+            <extra
+                android:name="quick_command"
+                android:value="schedule_meeting" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="toggle_smart_lights"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_lights"
+        android:shortcutShortLabel="@string/shortcut_toggle_lights_short"
+        android:shortcutLongLabel="@string/shortcut_toggle_lights_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.jarvisai.vktwrq"
+            android:targetClass="com.example.MainActivity">
+            <extra
+                android:name="shortcut_action"
+                android:value="toggle_smart_lights" />
+            <extra
+                android:name="quick_command"
+                android:value="toggle_smart_lights" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

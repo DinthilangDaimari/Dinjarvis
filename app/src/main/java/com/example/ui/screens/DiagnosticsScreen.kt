@@ -19,10 +19,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Speed
+import com.example.ui.components.AudioWaveformVisualizer
+import com.example.ui.components.WaveformStyle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -60,6 +63,9 @@ fun DiagnosticsScreen(
     modifier: Modifier = Modifier
 ) {
     val reactorOutput by viewModel.reactorOutput.collectAsState()
+    val isListening by viewModel.voiceSpeechManager.isListening.collectAsState()
+    val rmsLevel by viewModel.voiceSpeechManager.speechRmsLevel.collectAsState()
+    val partialText by viewModel.voiceSpeechManager.partialSpeechText.collectAsState()
 
     Column(
         modifier = modifier
@@ -147,6 +153,105 @@ fun DiagnosticsScreen(
                             fontSize = 12.sp,
                             color = JarvisTextSecondary
                         )
+                    }
+                }
+            }
+
+            // Real-time SpeechRecognizer Audio Telemetry Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = JarvisSurface),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isListening) JarvisAmber.copy(alpha = 0.7f) else JarvisCyan.copy(alpha = 0.4f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isListening) JarvisAmber else JarvisCyan)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "SPEECHRECOGNIZER TELEMETRY",
+                                    fontFamily = OrbitronFontFamily,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isListening) JarvisAmber else JarvisCyan
+                                )
+                            }
+                            Text(
+                                text = if (isListening) "${(rmsLevel * 100).toInt()}% RMS" else "STANDBY",
+                                fontFamily = OrbitronFontFamily,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isListening) JarvisAmber else JarvisTextSecondary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Waveform Visualizer reacting to live SpeechRecognizer mic intensity
+                        AudioWaveformVisualizer(
+                            isListening = isListening,
+                            rmsLevel = rmsLevel,
+                            height = 54.dp,
+                            style = WaveformStyle.BARS,
+                            primaryColor = JarvisAmber,
+                            secondaryColor = JarvisCyan,
+                            showTelemetryInfo = true
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isListening) {
+                                    if (partialText.isNotBlank()) "\"$partialText\"" else "Capturing vocal directives via Android SpeechRecognizer..."
+                                } else {
+                                    "Tap mic below to test real-time speech intensity waveform"
+                                },
+                                fontFamily = RajdhaniFontFamily,
+                                fontSize = 12.sp,
+                                color = if (isListening) JarvisCyan else JarvisTextSecondary,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            Button(
+                                onClick = { viewModel.toggleVoiceListening() },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isListening) JarvisAmber else JarvisCyan.copy(alpha = 0.2f)
+                                ),
+                                modifier = Modifier.testTag("diag_test_mic_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = "Test Mic",
+                                    tint = if (isListening) Color.Black else JarvisCyan,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isListening) "STOP" else "TEST",
+                                    fontFamily = OrbitronFontFamily,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isListening) Color.Black else JarvisCyan
+                                )
+                            }
+                        }
                     }
                 }
             }

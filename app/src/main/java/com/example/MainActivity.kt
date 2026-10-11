@@ -1,8 +1,11 @@
 package com.example
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -28,16 +31,18 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.ui.components.HomeScreenDialog
 import com.example.ui.components.JarvisBottomNav
 import com.example.ui.components.JarvisTopBar
 import com.example.ui.components.VocalSynthesizerDialog
 import com.example.ui.components.VoiceCommandBar
+import com.example.ui.components.WebAppDirectInstallDialog
+import com.example.service.JarvisWebCompanionServer
 import com.example.ui.screens.AppLauncherScreen
 import com.example.ui.screens.CalendarScreen
 import com.example.ui.screens.DashboardScreen
@@ -51,22 +56,32 @@ import com.example.ui.viewmodel.JarvisNavigationScreen
 import com.example.ui.viewmodel.JarvisUiEvent
 import com.example.ui.viewmodel.JarvisViewModel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
+    private val currentIntentFlow = mutableStateOf<Intent?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        currentIntentFlow.value = intent
+        com.example.util.HomeScreenHelper.initializeDynamicShortcuts(this)
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                JarvisMainApp()
+                JarvisMainApp(incomingIntent = currentIntentFlow.value)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        currentIntentFlow.value = intent
     }
 }
 
 @Composable
-fun JarvisMainApp() {
+fun JarvisMainApp(incomingIntent: Intent? = null) {
     val context = LocalContext.current
     val viewModel: JarvisViewModel = viewModel()
     val currentScreen by viewModel.currentScreen.collectAsState()
@@ -75,17 +90,70 @@ fun JarvisMainApp() {
     val ttsEnabled by viewModel.voiceSpeechManager.ttsEnabled.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
 
+    val partialSpeechText by viewModel.voiceSpeechManager.partialSpeechText.collectAsState()
+    val speechError by viewModel.voiceSpeechManager.speechError.collectAsState()
+    val speechRmsLevel by viewModel.voiceSpeechManager.speechRmsLevel.collectAsState()
+
     var showVoiceSettingsDialog by remember { mutableStateOf(false) }
+    var showHomeScreenDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Fallback system speech recognition activity launcher
+    val speechActivityLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+        val text = matches?.firstOrNull()?.trim()
+        if (!text.isNullOrEmpty()) {
+            viewModel.voiceSpeechManager.processDirectSpeechResult(text)
+        }
+    }
 
     // Audio recording permission launcher
     val audioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            viewModel.toggleVoiceListening()
+            if (SpeechRecognizer.isRecognitionAvailable(context)) {
+                viewModel.toggleVoiceListening()
+            } else {
+                speechActivityLauncher.launch(viewModel.voiceSpeechManager.createRecognizerIntent())
+            }
         } else {
-            Toast.makeText(context, "Microphone permission needed for voice input", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Microphone permission needed for speech recognition", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Handle incoming Home Screen widget or shortcut intents
+    LaunchedEffect(incomingIntent) {
+        incomingIntent?.let { intent ->
+            val autoListen = intent.getBooleanExtra("auto_listen", false)
+            val shortcutAction = intent.getStringExtra("shortcut_action") ?: intent.getStringExtra("quick_command")
+            if (autoListen) {
+                delay(800)
+                val hasPermission = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+                if (hasPermission) {
+                    viewModel.toggleVoiceListening()
+                } else {
+                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            } else if (!shortcutAction.isNullOrBlank()) {
+                delay(400)
+                when (shortcutAction) {
+                    "schedule_meeting" -> {
+                        viewModel.handleScheduleMeetingShortcut()
+                    }
+                    "toggle_smart_lights", "toggle_lights" -> {
+                        viewModel.handleToggleLightsShortcut()
+                    }
+                    "set_climate_72" -> viewModel.executeCommand("set thermostat to 72 degrees")
+                    "engage_shield" -> viewModel.executeCommand("activate perimeter defense shield")
+                    else -> viewModel.executeCommand(shortcutAction)
+                }
+            }
         }
     }
 
@@ -133,7 +201,8 @@ fun JarvisMainApp() {
                     ttsEnabled = ttsEnabled,
                     onToggleTts = { viewModel.toggleVoiceSpeech() },
                     onVoiceSettingsClick = { showVoiceSettingsDialog = true },
-                    onDiagnosticsClick = { viewModel.navigateTo(JarvisNavigationScreen.Diagnostics) }
+                    onDiagnosticsClick = { viewModel.navigateTo(JarvisNavigationScreen.Diagnostics) },
+                    onHomeScreenClick = { showHomeScreenDialog = true }
                 )
             }
         },
@@ -142,6 +211,9 @@ fun JarvisMainApp() {
                 VoiceCommandBar(
                     isListening = isListening,
                     isProcessing = isProcessing,
+                    partialSpeechText = partialSpeechText,
+                    speechError = speechError,
+                    rmsLevel = speechRmsLevel,
                     onMicClick = {
                         val hasPermission = ContextCompat.checkSelfPermission(
                             context,
@@ -149,7 +221,11 @@ fun JarvisMainApp() {
                         ) == PackageManager.PERMISSION_GRANTED
 
                         if (hasPermission) {
-                            viewModel.toggleVoiceListening()
+                            if (SpeechRecognizer.isRecognitionAvailable(context)) {
+                                viewModel.toggleVoiceListening()
+                            } else {
+                                speechActivityLauncher.launch(viewModel.voiceSpeechManager.createRecognizerIntent())
+                            }
                         } else {
                             audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         }
@@ -177,7 +253,8 @@ fun JarvisMainApp() {
             when (currentScreen) {
                 is JarvisNavigationScreen.Dashboard -> DashboardScreen(
                     viewModel = viewModel,
-                    onOpenVoiceSettings = { showVoiceSettingsDialog = true }
+                    onOpenVoiceSettings = { showVoiceSettingsDialog = true },
+                    onOpenHomeScreenDialog = { showHomeScreenDialog = true }
                 )
                 is JarvisNavigationScreen.Calendar -> CalendarScreen(viewModel = viewModel)
                 is JarvisNavigationScreen.Emails -> EmailScreen(viewModel = viewModel)
@@ -192,6 +269,13 @@ fun JarvisMainApp() {
                 VocalSynthesizerDialog(
                     viewModel = viewModel,
                     onDismiss = { showVoiceSettingsDialog = false }
+                )
+            }
+
+            // Home Screen Setup & Pinning Dialog
+            if (showHomeScreenDialog) {
+                HomeScreenDialog(
+                    onDismiss = { showHomeScreenDialog = false }
                 )
             }
         }

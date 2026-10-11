@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.theme.JarvisAlert
 import com.example.ui.theme.JarvisAmber
 import com.example.ui.theme.JarvisCyan
 import com.example.ui.theme.JarvisNeonTeal
@@ -54,6 +55,9 @@ import com.example.ui.theme.RajdhaniFontFamily
 fun VoiceCommandBar(
     isListening: Boolean,
     isProcessing: Boolean,
+    partialSpeechText: String = "",
+    speechError: String? = null,
+    rmsLevel: Float = 0f,
     onMicClick: () -> Unit,
     onSubmitCommand: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -79,11 +83,100 @@ fun VoiceCommandBar(
             .background(JarvisSurface.copy(alpha = 0.95f))
             .border(
                 width = 1.dp,
-                color = if (isListening) JarvisAmber.copy(alpha = 0.7f) else JarvisCyan.copy(alpha = 0.3f),
+                color = if (isListening) JarvisAmber.copy(alpha = 0.8f) else JarvisCyan.copy(alpha = 0.3f),
                 shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
             )
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
+        // Live Speech Recognition Status Banner
+        AnimatedVisibility(visible = isListening) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(JarvisAmber.copy(alpha = 0.12f))
+                    .border(1.dp, JarvisAmber.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(JarvisAmber)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "SPEECH RECOGNIZER ACTIVE",
+                            fontFamily = OrbitronFontFamily,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = JarvisAmber
+                        )
+                    }
+
+                    // Live mic input intensity percentage
+                    Text(
+                        text = "${(rmsLevel * 100).toInt()}% LEVEL",
+                        fontFamily = OrbitronFontFamily,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (rmsLevel > 0.5f) JarvisAmber else JarvisCyan
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Real-time audio waveform visualizer responding directly to speech input
+                AudioWaveformVisualizer(
+                    isListening = isListening,
+                    rmsLevel = rmsLevel,
+                    height = 42.dp,
+                    style = WaveformStyle.BARS,
+                    primaryColor = JarvisAmber,
+                    secondaryColor = JarvisCyan,
+                    showTelemetryInfo = false
+                )
+
+                if (partialSpeechText.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "\"$partialSpeechText\"",
+                        fontFamily = RajdhaniFontFamily,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = JarvisCyan
+                    )
+                }
+            }
+        }
+
+        // Speech Error notice
+        AnimatedVisibility(visible = !isListening && speechError != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(JarvisAlert.copy(alpha = 0.15f))
+                    .border(0.5.dp, JarvisAlert.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = speechError ?: "",
+                    fontFamily = RajdhaniFontFamily,
+                    fontSize = 12.sp,
+                    color = JarvisAmber
+                )
+            }
+        }
+
         // Quick suggestions carousel
         Row(
             modifier = Modifier
@@ -118,30 +211,53 @@ fun VoiceCommandBar(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Pulse Mic Button
+            // Pulse Mic Button with SpeechRecognizer trigger and dynamic volume scaling
+            val dynamicScale = if (isListening) 1f + (rmsLevel * 0.16f) else 1f
             Box(
                 modifier = Modifier
                     .size(50.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isListening) JarvisAmber
-                        else JarvisCyan.copy(alpha = 0.15f)
-                    )
-                    .border(
-                        width = 1.5.dp,
-                        color = if (isListening) Color.White else JarvisCyan,
-                        shape = CircleShape
-                    )
                     .clickable(onClick = onMicClick)
                     .testTag("voice_mic_button"),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
-                    contentDescription = "Voice Input",
-                    tint = if (isListening) Color.Black else JarvisCyan,
-                    modifier = Modifier.size(26.dp)
-                )
+                // Radiating pulse ring on audio input
+                if (isListening && rmsLevel > 0.05f) {
+                    val pulseRingBorderWidth = (1.5f + rmsLevel * 1.5f).dp
+                    Box(
+                        modifier = Modifier
+                            .size((50.dp * (1f + rmsLevel * 0.35f)))
+                            .border(
+                                width = pulseRingBorderWidth,
+                                color = JarvisAmber.copy(alpha = (rmsLevel * 0.7f).coerceIn(0.2f, 0.8f)),
+                                shape = CircleShape
+                            )
+                    )
+                }
+
+                val micBorderWidth = if (isListening) (1.5f + rmsLevel * 1.5f).dp else 1.5.dp
+                Box(
+                    modifier = Modifier
+                        .size(50.dp * dynamicScale)
+                        .clip(CircleShape)
+                        .background(
+                            if (isListening) {
+                                if (rmsLevel > 0.5f) Color(0xFFFF6D00) else JarvisAmber
+                            } else JarvisCyan.copy(alpha = 0.15f)
+                        )
+                        .border(
+                            width = micBorderWidth,
+                            color = if (isListening) Color.White else JarvisCyan,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
+                        contentDescription = if (isListening) "Stop Listening" else "Start Speech Recognition",
+                        tint = if (isListening) Color.Black else JarvisCyan,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(10.dp))
@@ -155,7 +271,7 @@ fun VoiceCommandBar(
                     .testTag("command_input_field"),
                 placeholder = {
                     Text(
-                        text = if (isListening) "Listening to voice directive..." else "Enter command or speak...",
+                        text = if (isListening) "Listening: speak to J.A.R.V.I.S..." else "Enter command or speak...",
                         color = JarvisTextSecondary,
                         fontSize = 14.sp,
                         fontFamily = RajdhaniFontFamily

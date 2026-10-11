@@ -18,6 +18,29 @@ data class CalendarEvent(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "schedule_reminders")
+data class UserScheduleReminder(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val notes: String = "",
+    val dueDateString: String, // YYYY-MM-DD or date label
+    val dueTimeString: String, // HH:MM AM/PM
+    val priority: String = "HIGH", // "HIGH", "MEDIUM", "LOW"
+    val isCompleted: Boolean = false,
+    val category: String = "REMINDER", // "REMINDER", "BRIEFING", "LAB", "PERSONAL"
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "schedule_history_context")
+data class ScheduleHistoryContext(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val userDirective: String,
+    val resolvedAction: String, // "SCHEDULE_CREATED", "REMINDER_SET", "SCHEDULE_MODIFIED", "CONTEXT_QUERIED"
+    val contextSummary: String,
+    val relatedTitle: String = "",
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "emails")
 data class EmailMessage(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
